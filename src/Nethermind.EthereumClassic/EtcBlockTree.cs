@@ -40,10 +40,11 @@ internal class EtcBlockTree : BlockTree
         ISyncConfig? syncConfig,
         IStateBoundary? stateBoundary,
         ILogManager? logManager,
+        BlockTreeMutationLock mutationLock,
         ulong genesisBlockNumber = 0)
         : base(blockStore, headerDb, blockInfoDb, metadataDb, badBlockStore,
             balStore, chainLevelInfoRepository, specProvider, syncConfig,
-            stateBoundary, logManager, genesisBlockNumber)
+            stateBoundary, logManager, mutationLock, genesisBlockNumber)
     {
     }
 
