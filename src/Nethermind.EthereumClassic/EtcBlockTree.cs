@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: 2025 Ethereum Classic Community
 // SPDX-License-Identifier: Apache-2.0
 //
-// EtcBlockTree overrides HeadImprovementRequirementsSatisfied to apply
-// MESS (ECBP-1100) antigravity scoring on reorg attempts.
+// EtcBlockTree applies MESS (ECBP-1100) antigravity scoring twice. When a block is
+// suggested, a rejected fork is stored but never becomes the best suggested block,
+// so it cannot shadow the honest chain's extensions. Before a block is processed
+// it is scored again against the head as it stands then, since the head may have
+// advanced while the block waited in the queue.
 
 using Autofac.Features.AttributeFilters;
 using Nethermind.Blockchain;
@@ -48,43 +51,52 @@ internal class EtcBlockTree : BlockTree
 
     public bool IsMessEnabled => _messEnabled;
 
-    protected override bool HeadImprovementRequirementsSatisfied(BlockHeader header)
-    {
-        if (!base.HeadImprovementRequirementsSatisfied(header))
-            return false;
+    protected override bool BestSuggestedImprovementRequirementsSatisfied(BlockHeader header) =>
+        base.BestSuggestedImprovementRequirementsSatisfied(header) && !IsRejectedByMess(header);
 
+    public override bool IsBetterThanHead(BlockHeader? header) =>
+        base.IsBetterThanHead(header) && !IsRejectedByMess(header!);
+
+    private bool IsRejectedByMess(BlockHeader header)
+    {
         if (!_messEnabled)
-            return true;
+            return false;
 
         BlockHeader? currentHead = Head?.Header;
         if (currentHead is null)
-            return true;
+            return false;
 
         BlockHeader? ancestor = FindCommonAncestor(currentHead, header);
         if (ancestor is null)
-            return true;
+            return false;
 
         // Chain extension (proposed builds directly on head) — never penalize.
         if (ancestor.Hash == currentHead.Hash)
-            return true;
+            return false;
 
-        UInt256 commonAncestorTD = ancestor.TotalDifficulty ?? UInt256.Zero;
+        // The ancestor was found without its total difficulty; load it.
+        ancestor = FindHeader(ancestor.Hash, BlockTreeLookupOptions.None, ancestor.Number);
+        if (ancestor?.TotalDifficulty is null)
+            return false;
+
+        UInt256 commonAncestorTD = ancestor.TotalDifficulty.Value;
         UInt256 localTD = currentHead.TotalDifficulty ?? UInt256.Zero;
         UInt256 proposedTD = header.TotalDifficulty ?? UInt256.Zero;
 
-        if (MessCalculator.ShouldRejectReorg(
+        if (!MessCalculator.ShouldRejectReorg(
                 commonAncestorTD,
                 localTD,
                 proposedTD,
                 ancestor.Timestamp,
                 currentHead.Timestamp))
         {
-            if (Logger.IsInfo) Logger.Info(
-                $"MESS rejected reorg: ancestor #{ancestor.Number} ({ancestor.Hash}), " +
-                $"head #{currentHead.Number}, proposed #{header.Number} ({header.Hash}), " +
-                $"timeDelta={currentHead.Timestamp - ancestor.Timestamp}s");
             return false;
         }
+
+        if (Logger.IsInfo) Logger.Info(
+            $"MESS rejected reorg: ancestor #{ancestor.Number} ({ancestor.Hash}), " +
+            $"head #{currentHead.Number}, proposed #{header.Number} ({header.Hash}), " +
+            $"timeDelta={currentHead.Timestamp - ancestor.Timestamp}s");
 
         return true;
     }
