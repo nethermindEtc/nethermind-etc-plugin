@@ -15,7 +15,7 @@ NETHERMIND_PID=""
 NETHERMIND_LOG=""
 PASSED=0
 FAILED=0
-TOTAL=11
+TOTAL=12
 
 stop_node() {
     if [ -n "$NETHERMIND_PID" ] && kill -0 "$NETHERMIND_PID" 2>/dev/null; then
@@ -280,6 +280,33 @@ fi
 stop_node
 
 # ===========================================================================
+# MESS: the activation monitor starts when EtcMess.Enabled is set
+# ===========================================================================
+start_node "mess" --EtcMess.Enabled true
+
+# === Test 11: MESS monitor running ===
+echo ""
+echo "Test 11: MESS activation monitor starts with EtcMess.Enabled"
+# The monitor step is not ordered against JSON-RPC startup, so poll for it.
+MESS_STARTED=false
+for _ in $(seq 1 30); do
+    if grep -q "MESS activation monitor started" "$NETHERMIND_LOG"; then
+        MESS_STARTED=true
+        break
+    fi
+    kill -0 "$NETHERMIND_PID" 2>/dev/null || break
+    sleep 1
+done
+
+if $MESS_STARTED; then
+    pass "MESS activation monitor started"
+else
+    fail "MESS activation monitor did not start"
+fi
+
+stop_node
+
+# ===========================================================================
 # Invalid mining config: the node must refuse to start
 # ===========================================================================
 
@@ -311,9 +338,9 @@ expect_startup_failure() {
     stop_node
 }
 
-# === Test 11: mining without a block author account is rejected ===
+# === Test 12: mining without a block author account is rejected ===
 echo ""
-echo "Test 11: mining without KeyStore.BlockAuthorAccount is rejected"
+echo "Test 12: mining without KeyStore.BlockAuthorAccount is rejected"
 expect_startup_failure "no-author" "KeyStore.BlockAuthorAccount is required" \
     --KeyStore.BlockAuthorAccount ""
 

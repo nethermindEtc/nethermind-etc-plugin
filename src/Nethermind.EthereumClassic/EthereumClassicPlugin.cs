@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Autofac;
 using Autofac.Core;
+using Autofac.Features.AttributeFilters;
 using Nethermind.Api;
 using Nethermind.Api.Extensions;
 using Nethermind.Api.Steps;
@@ -97,9 +98,12 @@ public class EthereumClassicModule(
         if (messEnabled)
         {
             builder.RegisterType<EtcBlockTree>()
+                .WithAttributeFiltering()
                 .As<IBlockTree>()
                 .AsSelf()
                 .SingleInstance();
+
+            builder.AddStep(typeof(StartMessActivationMonitor));
         }
 
         // Override IEthash with Etchash implementation
