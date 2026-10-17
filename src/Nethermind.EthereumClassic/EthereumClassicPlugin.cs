@@ -44,11 +44,9 @@ public class EthereumClassicPlugin(
     IEtcValidationConfig validationConfig,
     IKeyStoreConfig keyStoreConfig) : IConsensusPlugin
 {
-    public string Name => "Etchash";
-    public string Description => "Ethereum Classic Etchash Consensus (ECIP-1099)";
-    public string Author => "Ethereum Classic Community";
-
-    public string SealEngineType => "Etchash";
+    string INethermindPlugin.Name => "Etchash";
+    string INethermindPlugin.Description => "Ethereum Classic Etchash Consensus (ECIP-1099)";
+    string INethermindPlugin.Author => "Ethereum Classic Community";
 
     private INethermindApi? _nethermindApi;
     private MessActivationMonitor? _messMonitor;
@@ -57,7 +55,7 @@ public class EthereumClassicPlugin(
         chainSpec.EngineChainSpecParametersProvider?.AllChainSpecParameters
             .OfType<EtchashChainSpecEngineParameters>().FirstOrDefault();
 
-    public bool Enabled => GetEtchashParams() is not null;
+    bool INethermindPlugin.Enabled => GetEtchashParams() is not null;
 
     public Task Init(INethermindApi api)
     {
@@ -99,7 +97,7 @@ public class EthereumClassicPlugin(
     }
     public Task InitRpcModules() => Task.CompletedTask;
 
-    public IModule? Module
+    IModule? INethermindPlugin.Module
     {
         get
         {
