@@ -15,7 +15,7 @@ NETHERMIND_PID=""
 NETHERMIND_LOG=""
 PASSED=0
 FAILED=0
-TOTAL=10
+TOTAL=11
 
 stop_node() {
     if [ -n "$NETHERMIND_PID" ] && kill -0 "$NETHERMIND_PID" 2>/dev/null; then
@@ -278,6 +278,44 @@ else
 fi
 
 stop_node
+
+# ===========================================================================
+# Invalid mining config: the node must refuse to start
+# ===========================================================================
+
+# expect_startup_failure <name> <expected message> [extra CLI args...]
+expect_startup_failure() {
+    local name="$1" message="$2"
+    shift 2
+    NETHERMIND_LOG="$NETHERMIND_DIR/nethermind-test-$name.log"
+    echo ""
+    echo "Starting Nethermind with an invalid config ($name)..."
+    "$NETHERMIND_BIN" --config test-mining --datadir "$NETHERMIND_DIR/data-$name" "$@" \
+        > "$NETHERMIND_LOG" 2>&1 &
+    NETHERMIND_PID=$!
+
+    local waited=0
+    while kill -0 "$NETHERMIND_PID" 2>/dev/null && [ "$waited" -lt 60 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if kill -0 "$NETHERMIND_PID" 2>/dev/null; then
+        fail "Node kept running with an invalid config ($name)"
+    elif ! grep -qF "$message" "$NETHERMIND_LOG"; then
+        fail "Node exited without the expected message '$message' ($name)"
+        tail -20 "$NETHERMIND_LOG"
+    else
+        pass "Node refused to start: $message"
+    fi
+    stop_node
+}
+
+# === Test 11: mining without a block author account is rejected ===
+echo ""
+echo "Test 11: mining without KeyStore.BlockAuthorAccount is rejected"
+expect_startup_failure "no-author" "KeyStore.BlockAuthorAccount is required" \
+    --KeyStore.BlockAuthorAccount ""
 
 # === Summary ===
 echo ""
