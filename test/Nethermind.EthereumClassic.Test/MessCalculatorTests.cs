@@ -46,6 +46,20 @@ public class MessCalculatorTests
         }
     }
 
+    // Reference vectors from core-geth TestEcbp1100PolynomialV: (blocks * 13s) -> curve / 128.
+    [TestCase(100, 1)]
+    [TestCase(300, 2)]
+    [TestCase(500, 5)]
+    [TestCase(1000, 16)]
+    [TestCase(2000, 31)]
+    [TestCase(10000, 31)]
+    [TestCase(1_000_000_000, 31)]
+    public void PolynomialV_MatchesCoreGethVectors(long blocks, long expectedGravity)
+    {
+        UInt256 result = MessCalculator.PolynomialV((ulong)blocks * 13) / 128;
+        result.Should().Be((UInt256)(ulong)expectedGravity);
+    }
+
     [Test]
     public void PolynomialV_AtMidpoint_ReturnsExpectedValue()
     {
