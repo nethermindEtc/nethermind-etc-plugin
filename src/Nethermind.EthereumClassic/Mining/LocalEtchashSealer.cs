@@ -19,17 +19,17 @@ namespace Nethermind.EthereumClassic.Mining;
 internal sealed class LocalEtchashSealer : ISealer
 {
     private readonly IEthash _ethash;
-    private readonly ISigner _signer;
+    private readonly Address _coinbase;
     private readonly ILogger _logger;
 
-    public LocalEtchashSealer(IEthash ethash, ISigner signer, ILogManager logManager)
+    public LocalEtchashSealer(IEthash ethash, Address coinbase, ILogManager logManager)
     {
         _ethash = ethash ?? throw new ArgumentNullException(nameof(ethash));
-        _signer = signer ?? throw new ArgumentNullException(nameof(signer));
+        _coinbase = coinbase ?? throw new ArgumentNullException(nameof(coinbase));
         _logger = logManager?.GetClassLogger<LocalEtchashSealer>() ?? throw new ArgumentNullException(nameof(logManager));
     }
 
-    public Address Address => _signer.Address;
+    public Address Address => _coinbase;
 
     public bool CanSeal(ulong blockNumber, Hash256 parentHash) => true;
 

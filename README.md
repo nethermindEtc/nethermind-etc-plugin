@@ -54,7 +54,7 @@ Set the mining mode via `EtcMining.Mode`:
 | `Local` | Continuous built-in CPU mining, driven by the same template refresh cycle as `Remote`. |
 | `Manual` | CPU sealing triggered only by `evm_mine` (requires the `Evm` JSON-RPC module), for dev/test chains that need deterministic block heights. |
 
-Mining also requires `Mining.Enabled = true` and a `KeyStore.BlockAuthorAccount` (the coinbase that receives block rewards).
+Mining also requires `Mining.Enabled = true` and `EtcMining.Coinbase`, the address that receives block rewards. Only the address is needed; the node never holds its private key. `KeyStore.BlockAuthorAccount` is not used by Etchash and is rejected at startup when mining is enabled.
 
 In `Remote` and `Local` modes, `evm_mine` (if the `Evm` JSON-RPC module is enabled) does not mine a block itself; it forces an immediate template rebuild instead of waiting for the next refresh.
 
