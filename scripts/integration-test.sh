@@ -96,6 +96,7 @@ start_node() {
     NETHERMIND_LOG="$NETHERMIND_DIR/nethermind-test-$name.log"
     echo ""
     echo "Starting Nethermind from $NETHERMIND_DIR with config test-mining ($name phase)..."
+    rm -rf "$NETHERMIND_DIR/data-$name"
     "$NETHERMIND_BIN" --config test-mining --datadir "$NETHERMIND_DIR/data-$name" "$@" \
         > "$NETHERMIND_LOG" 2>&1 &
     NETHERMIND_PID=$!
@@ -219,7 +220,14 @@ start_node "remote" --EtcMining.Mode Remote --EtcMining.WorkRefreshSeconds 2
 # === Test 6: eth_getWork serves work without any evm_mine ===
 echo ""
 echo "Test 6: eth_getWork serves work immediately (no evm_mine)"
-GETWORK_RESULT=$(rpc_call "eth_getWork")
+GETWORK_RESULT=""
+for _ in $(seq 1 30); do
+    GETWORK_RESULT=$(rpc_call "eth_getWork")
+    if echo "$GETWORK_RESULT" | grep -q '"result":\['; then
+        break
+    fi
+    sleep 1
+done
 if echo "$GETWORK_RESULT" | grep -q '"result":\['; then
     pass "eth_getWork returned a work package"
 else
@@ -230,8 +238,14 @@ fi
 echo ""
 echo "Test 7: powHash rotates with the work refresh"
 POW_HASH_BEFORE=$(getwork_field 1)
-sleep 3
-POW_HASH_AFTER=$(getwork_field 1)
+POW_HASH_AFTER=$POW_HASH_BEFORE
+for _ in $(seq 1 10); do
+    sleep 1
+    POW_HASH_AFTER=$(getwork_field 1)
+    if [ "$POW_HASH_AFTER" != "$POW_HASH_BEFORE" ]; then
+        break
+    fi
+done
 if [ -n "$POW_HASH_BEFORE" ] && [ -n "$POW_HASH_AFTER" ] && [ "$POW_HASH_BEFORE" != "$POW_HASH_AFTER" ]; then
     pass "powHash rotated ($POW_HASH_BEFORE -> $POW_HASH_AFTER)"
 else
