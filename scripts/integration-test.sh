@@ -15,7 +15,7 @@ NETHERMIND_PID=""
 NETHERMIND_LOG=""
 PASSED=0
 FAILED=0
-TOTAL=10
+TOTAL=12
 
 stop_node() {
     if [ -n "$NETHERMIND_PID" ] && kill -0 "$NETHERMIND_PID" 2>/dev/null; then
@@ -96,6 +96,7 @@ start_node() {
     NETHERMIND_LOG="$NETHERMIND_DIR/nethermind-test-$name.log"
     echo ""
     echo "Starting Nethermind from $NETHERMIND_DIR with config test-mining ($name phase)..."
+    rm -rf "$NETHERMIND_DIR/data-$name"
     "$NETHERMIND_BIN" --config test-mining --datadir "$NETHERMIND_DIR/data-$name" "$@" \
         > "$NETHERMIND_LOG" 2>&1 &
     NETHERMIND_PID=$!
@@ -219,7 +220,14 @@ start_node "remote" --EtcMining.Mode Remote --EtcMining.WorkRefreshSeconds 2
 # === Test 6: eth_getWork serves work without any evm_mine ===
 echo ""
 echo "Test 6: eth_getWork serves work immediately (no evm_mine)"
-GETWORK_RESULT=$(rpc_call "eth_getWork")
+GETWORK_RESULT=""
+for _ in $(seq 1 30); do
+    GETWORK_RESULT=$(rpc_call "eth_getWork")
+    if echo "$GETWORK_RESULT" | grep -q '"result":\['; then
+        break
+    fi
+    sleep 1
+done
 if echo "$GETWORK_RESULT" | grep -q '"result":\['; then
     pass "eth_getWork returned a work package"
 else
@@ -230,8 +238,14 @@ fi
 echo ""
 echo "Test 7: powHash rotates with the work refresh"
 POW_HASH_BEFORE=$(getwork_field 1)
-sleep 3
-POW_HASH_AFTER=$(getwork_field 1)
+POW_HASH_AFTER=$POW_HASH_BEFORE
+for _ in $(seq 1 10); do
+    sleep 1
+    POW_HASH_AFTER=$(getwork_field 1)
+    if [ "$POW_HASH_AFTER" != "$POW_HASH_BEFORE" ]; then
+        break
+    fi
+done
 if [ -n "$POW_HASH_BEFORE" ] && [ -n "$POW_HASH_AFTER" ] && [ "$POW_HASH_BEFORE" != "$POW_HASH_AFTER" ]; then
     pass "powHash rotated ($POW_HASH_BEFORE -> $POW_HASH_AFTER)"
 else
@@ -278,6 +292,71 @@ else
 fi
 
 stop_node
+
+# ===========================================================================
+# MESS: the activation monitor starts when EtcMess.Enabled is set
+# ===========================================================================
+start_node "mess" --EtcMess.Enabled true
+
+# === Test 11: MESS monitor running ===
+echo ""
+echo "Test 11: MESS activation monitor starts with EtcMess.Enabled"
+# The monitor step is not ordered against JSON-RPC startup, so poll for it.
+MESS_STARTED=false
+for _ in $(seq 1 30); do
+    if grep -q "MESS activation monitor started" "$NETHERMIND_LOG"; then
+        MESS_STARTED=true
+        break
+    fi
+    kill -0 "$NETHERMIND_PID" 2>/dev/null || break
+    sleep 1
+done
+
+if $MESS_STARTED; then
+    pass "MESS activation monitor started"
+else
+    fail "MESS activation monitor did not start"
+fi
+
+stop_node
+
+# ===========================================================================
+# Invalid mining config: the node must refuse to start
+# ===========================================================================
+
+# expect_startup_failure <name> <expected message> [extra CLI args...]
+expect_startup_failure() {
+    local name="$1" message="$2"
+    shift 2
+    NETHERMIND_LOG="$NETHERMIND_DIR/nethermind-test-$name.log"
+    echo ""
+    echo "Starting Nethermind with an invalid config ($name)..."
+    "$NETHERMIND_BIN" --config test-mining --datadir "$NETHERMIND_DIR/data-$name" "$@" \
+        > "$NETHERMIND_LOG" 2>&1 &
+    NETHERMIND_PID=$!
+
+    local waited=0
+    while kill -0 "$NETHERMIND_PID" 2>/dev/null && [ "$waited" -lt 60 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if kill -0 "$NETHERMIND_PID" 2>/dev/null; then
+        fail "Node kept running with an invalid config ($name)"
+    elif ! grep -qF "$message" "$NETHERMIND_LOG"; then
+        fail "Node exited without the expected message '$message' ($name)"
+        tail -20 "$NETHERMIND_LOG"
+    else
+        pass "Node refused to start: $message"
+    fi
+    stop_node
+}
+
+# === Test 12: mining without a block author account is rejected ===
+echo ""
+echo "Test 12: mining without KeyStore.BlockAuthorAccount is rejected"
+expect_startup_failure "no-author" "KeyStore.BlockAuthorAccount is required" \
+    --KeyStore.BlockAuthorAccount ""
 
 # === Summary ===
 echo ""

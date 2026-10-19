@@ -7,8 +7,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using Autofac;
 using Autofac.Core;
+using Autofac.Features.AttributeFilters;
 using Nethermind.Api;
 using Nethermind.Api.Extensions;
+using Nethermind.Api.Steps;
 using Nethermind.Blockchain;
 using Nethermind.Config;
 using Nethermind.Consensus;
@@ -41,63 +43,17 @@ public class EthereumClassicPlugin(
     ChainSpec chainSpec,
     IEtcMiningConfig miningConfig,
     IEtcMessConfig messConfig,
-    IEtcValidationConfig validationConfig,
-    IKeyStoreConfig keyStoreConfig) : IConsensusPlugin
+    IEtcValidationConfig validationConfig) : IConsensusPlugin
 {
-    public string Name => "Etchash";
-    public string Description => "Ethereum Classic Etchash Consensus (ECIP-1099)";
-    public string Author => "Ethereum Classic Community";
-
-    public string SealEngineType => "Etchash";
-
-    private INethermindApi? _nethermindApi;
-    private MessActivationMonitor? _messMonitor;
+    string INethermindPlugin.Name => "Etchash";
+    string INethermindPlugin.Description => "Ethereum Classic Etchash Consensus (ECIP-1099)";
+    string INethermindPlugin.Author => "Ethereum Classic Community";
 
     private EtchashChainSpecEngineParameters? GetEtchashParams() =>
         chainSpec.EngineChainSpecParametersProvider?.AllChainSpecParameters
             .OfType<EtchashChainSpecEngineParameters>().FirstOrDefault();
 
-    public bool Enabled => GetEtchashParams() is not null;
-
-    public Task Init(INethermindApi api)
-    {
-        _nethermindApi = api;
-
-        // Set gas token ticker to ETC for logging
-        BlocksConfig.GasTokenTicker = "ETC";
-
-        // Validate BlockAuthorAccount when mining is enabled
-        if (miningConfig.Mode != EtcMiningMode.None)
-        {
-            if (string.IsNullOrWhiteSpace(keyStoreConfig.BlockAuthorAccount))
-            {
-                throw new InvalidOperationException(
-                    $"KeyStore.BlockAuthorAccount is required when EtcMining.Mode is {miningConfig.Mode}");
-            }
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public Task InitNetworkProtocol()
-    {
-        if (messConfig.Enabled)
-        {
-            var blockTree = _nethermindApi!.BlockTree as EtcBlockTree;
-            if (blockTree is not null)
-            {
-                _messMonitor = new MessActivationMonitor(
-                    blockTree,
-                    _nethermindApi.Context.Resolve<ISyncPeerPool>(),
-                    _nethermindApi.Timestamper,
-                    _nethermindApi.LogManager);
-                _messMonitor.Start();
-            }
-        }
-
-        return Task.CompletedTask;
-    }
-    public Task InitRpcModules() => Task.CompletedTask;
+    bool INethermindPlugin.Enabled => GetEtchashParams() is not null;
 
     public IModule? Module
     {
@@ -136,13 +92,18 @@ public class EthereumClassicModule(
 {
     protected override void Load(ContainerBuilder builder)
     {
+        builder.AddStep(typeof(InitializeEtcPlugin));
+
         // Register EtcBlockTree as IBlockTree when MESS is enabled
         if (messEnabled)
         {
             builder.RegisterType<EtcBlockTree>()
+                .WithAttributeFiltering()
                 .As<IBlockTree>()
                 .AsSelf()
                 .SingleInstance();
+
+            builder.AddStep(typeof(StartMessActivationMonitor));
         }
 
         // Override IEthash with Etchash implementation
