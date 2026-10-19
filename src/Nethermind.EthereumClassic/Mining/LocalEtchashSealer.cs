@@ -18,11 +18,11 @@ namespace Nethermind.EthereumClassic.Mining;
 /// </summary>
 internal sealed class LocalEtchashSealer : ISealer
 {
-    private readonly IEthash _ethash;
+    private readonly Etchash _ethash;
     private readonly Address _coinbase;
     private readonly ILogger _logger;
 
-    public LocalEtchashSealer(IEthash ethash, Address coinbase, ILogManager logManager)
+    public LocalEtchashSealer(Etchash ethash, Address coinbase, ILogManager logManager)
     {
         _ethash = ethash ?? throw new ArgumentNullException(nameof(ethash));
         _coinbase = coinbase ?? throw new ArgumentNullException(nameof(coinbase));
@@ -37,16 +37,16 @@ internal sealed class LocalEtchashSealer : ISealer
     {
         ValidateBlock(block);
 
-        Block sealedBlock = await Task.Factory.StartNew(() => Mine(block), cancellationToken);
+        Block sealedBlock = await Task.Factory.StartNew(() => Mine(block, cancellationToken), cancellationToken);
         sealedBlock.Header.Hash = sealedBlock.Header.CalculateHash();
         return sealedBlock;
     }
 
-    private Block Mine(Block block)
+    private Block Mine(Block block, CancellationToken cancellationToken)
     {
         if (_logger.IsInfo) _logger.Info($"Starting CPU mining for block {block.Number}");
 
-        (Hash256 mixHash, ulong nonce) = _ethash.Mine(block.Header, startNonce: null);
+        (Hash256 mixHash, ulong nonce) = _ethash.Mine(block.Header, startNonce: null, cancellationToken);
 
         block.Header.Nonce = nonce;
         block.Header.MixHash = mixHash;

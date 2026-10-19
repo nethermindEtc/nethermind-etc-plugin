@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
+using System.Threading;
 using Nethermind.Consensus.Ethash;
 using Nethermind.Core;
 using Nethermind.Core.Crypto;
@@ -55,7 +56,10 @@ internal class Etchash : IEthash
         return meetsTarget;
     }
 
-    public (Hash256, ulong) Mine(BlockHeader header, ulong? startNonce)
+    public (Hash256, ulong) Mine(BlockHeader header, ulong? startNonce) =>
+        Mine(header, startNonce, CancellationToken.None);
+
+    public (Hash256, ulong) Mine(BlockHeader header, ulong? startNonce, CancellationToken cancellationToken)
     {
         EtchashCacheEpoch cacheEpoch = _epochCalculator.GetCacheEpoch(header.Number);
 
@@ -66,6 +70,7 @@ internal class Etchash : IEthash
         ulong dataSize = EthashBase.GetDataSize(cacheEpoch.DagEpoch);
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             (byte[]? mix, ValueHash256 result, bool ok) = EthashBase.Hashimoto(dataSize, dataSet, headerHash, null, nonce);
             if (EthashBase.IsValidMiningResult(mix, ok, result.Bytes, header.Difficulty))
                 return (new Hash256(mix), nonce);
