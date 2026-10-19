@@ -60,7 +60,7 @@ internal sealed class MessActivationMonitor : IDisposable
         if (head is not null)
         {
             ulong now = _timestamper.UnixTime.Seconds;
-            headFresh = now - head.Timestamp < MaxHeadAgeSec;
+            headFresh = now < head.Timestamp + MaxHeadAgeSec;
         }
 
         bool shouldEnable = enoughPeers && headFresh;

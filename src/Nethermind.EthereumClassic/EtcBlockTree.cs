@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: 2025 Ethereum Classic Community
 // SPDX-License-Identifier: Apache-2.0
 //
-// EtcBlockTree overrides HeadImprovementRequirementsSatisfied to apply
-// MESS (ECBP-1100) antigravity scoring on reorg attempts.
+// EtcBlockTree applies MESS (ECBP-1100) antigravity scoring twice. When a block is
+// suggested, a rejected fork is stored but never becomes the best suggested block,
+// so it cannot shadow the honest chain's extensions. Before a block is processed
+// it is scored again against the head as it stands then, since the head may have
+// advanced while the block waited in the queue.
 
 using Autofac.Features.AttributeFilters;
 using Nethermind.Blockchain;
@@ -48,78 +51,75 @@ internal class EtcBlockTree : BlockTree
 
     public bool IsMessEnabled => _messEnabled;
 
-    protected override bool HeadImprovementRequirementsSatisfied(BlockHeader header)
-    {
-        if (!base.HeadImprovementRequirementsSatisfied(header))
-            return false;
+    protected override bool BestSuggestedImprovementRequirementsSatisfied(BlockHeader header) =>
+        base.BestSuggestedImprovementRequirementsSatisfied(header) && !IsRejectedByMess(header);
 
+    public override bool IsBetterThanHead(BlockHeader? header) =>
+        base.IsBetterThanHead(header) && !IsRejectedByMess(header!);
+
+    private bool IsRejectedByMess(BlockHeader header)
+    {
         if (!_messEnabled)
-            return true;
+            return false;
 
         BlockHeader? currentHead = Head?.Header;
         if (currentHead is null)
-            return true;
+            return false;
 
+        // A fork whose common ancestor cannot be found is not a reorg MESS can score, so reject it.
         BlockHeader? ancestor = FindCommonAncestor(currentHead, header);
         if (ancestor is null)
             return true;
 
         // Chain extension (proposed builds directly on head) — never penalize.
         if (ancestor.Hash == currentHead.Hash)
+            return false;
+
+        // The ancestor was found without its total difficulty; load it.
+        ancestor = FindHeader(ancestor.Hash, BlockTreeLookupOptions.None, ancestor.Number);
+        if (ancestor?.TotalDifficulty is not { } commonAncestorTD
+            || currentHead.TotalDifficulty is not { } localTD
+            || header.TotalDifficulty is not { } proposedTD)
+        {
             return true;
+        }
 
-        UInt256 commonAncestorTD = ancestor.TotalDifficulty ?? UInt256.Zero;
-        UInt256 localTD = currentHead.TotalDifficulty ?? UInt256.Zero;
-        UInt256 proposedTD = header.TotalDifficulty ?? UInt256.Zero;
-
-        if (MessCalculator.ShouldRejectReorg(
+        if (!MessCalculator.ShouldRejectReorg(
                 commonAncestorTD,
                 localTD,
                 proposedTD,
                 ancestor.Timestamp,
                 currentHead.Timestamp))
         {
-            if (Logger.IsInfo) Logger.Info(
-                $"MESS rejected reorg: ancestor #{ancestor.Number} ({ancestor.Hash}), " +
-                $"head #{currentHead.Number}, proposed #{header.Number} ({header.Hash}), " +
-                $"timeDelta={currentHead.Timestamp - ancestor.Timestamp}s");
             return false;
         }
+
+        if (Logger.IsInfo) Logger.Info(
+            $"MESS rejected reorg: ancestor #{ancestor.Number} ({ancestor.Hash}), " +
+            $"head #{currentHead.Number}, proposed #{header.Number} ({header.Hash}), " +
+            $"timeDelta={currentHead.Timestamp - ancestor.Timestamp}s");
 
         return true;
     }
 
     private BlockHeader? FindCommonAncestor(BlockHeader a, BlockHeader b)
     {
-        const int maxDepth = 8192;
-        int steps = 0;
-
         // Walk both chains back to the same height, then walk together until hashes match.
         BlockHeader? ha = a;
         BlockHeader? hb = b;
 
-        while (ha is not null && hb is not null && ha.Number > hb.Number && steps < maxDepth)
-        {
+        while (ha is not null && hb is not null && ha.Number > hb.Number)
             ha = FindHeader(ha.ParentHash, BlockTreeLookupOptions.TotalDifficultyNotNeeded);
-            steps++;
-        }
 
-        while (hb is not null && ha is not null && hb.Number > ha.Number && steps < maxDepth)
-        {
+        while (hb is not null && ha is not null && hb.Number > ha.Number)
             hb = FindHeader(hb.ParentHash, BlockTreeLookupOptions.TotalDifficultyNotNeeded);
-            steps++;
-        }
 
-        while (ha is not null && hb is not null && ha.Hash != hb.Hash && steps < maxDepth)
+        while (ha is not null && hb is not null && ha.Hash != hb.Hash)
         {
             ha = FindHeader(ha.ParentHash, BlockTreeLookupOptions.TotalDifficultyNotNeeded);
             hb = FindHeader(hb.ParentHash, BlockTreeLookupOptions.TotalDifficultyNotNeeded);
-            steps++;
         }
 
-        if (ha is not null && hb is not null && ha.Hash == hb.Hash)
-            return ha;
-
-        return null;
+        return ha is not null && hb is not null ? ha : null;
     }
 }
