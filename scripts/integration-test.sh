@@ -15,7 +15,7 @@ NETHERMIND_PID=""
 NETHERMIND_LOG=""
 PASSED=0
 FAILED=0
-TOTAL=12
+TOTAL=14
 
 stop_node() {
     if [ -n "$NETHERMIND_PID" ] && kill -0 "$NETHERMIND_PID" 2>/dev/null; then
@@ -70,6 +70,14 @@ mine_and_wait() {
     done
     echo "Timeout waiting for block to advance from $prev_block"
     return 1
+}
+
+# Must match EtcMining.Coinbase in configs/test-mining.cfg
+EXPECTED_COINBASE="0x0000000000000000000000000000000000000001"
+
+# Lowercased miner of block <hex number>
+block_miner() {
+    rpc_call "eth_getBlockByNumber" "[\"$1\", false]" | grep -o '"miner":"[^"]*"' | cut -d'"' -f4 | tr 'A-F' 'a-f' || true
 }
 
 # Extract the Nth 0x-prefixed field of the eth_getWork result
@@ -203,7 +211,11 @@ HAS_MIX_HASH=$(echo "$BLOCK_RESULT" | grep -c '"mixHash"' || true)
 # Check difficulty is 0x1
 HAS_DIFFICULTY=$(echo "$BLOCK_RESULT" | grep -c '"difficulty":"0x1"' || true)
 
-if [ "$HAS_MINER" -ge 1 ] && [ "$HAS_NONCE" -ge 1 ] && [ "$HAS_MIX_HASH" -ge 1 ] && [ "$HAS_DIFFICULTY" -ge 1 ]; then
+MINER=$(block_miner 0x1)
+
+if [ "$MINER" != "$EXPECTED_COINBASE" ]; then
+    fail "Block 1 miner is $MINER, expected the configured coinbase $EXPECTED_COINBASE"
+elif [ "$HAS_MINER" -ge 1 ] && [ "$HAS_NONCE" -ge 1 ] && [ "$HAS_MIX_HASH" -ge 1 ] && [ "$HAS_DIFFICULTY" -ge 1 ]; then
     pass "Block has miner, nonce, mixHash, and difficulty=0x1"
 else
     fail "Block missing PoW fields. miner=$HAS_MINER nonce=$HAS_NONCE mixHash=$HAS_MIX_HASH difficulty=$HAS_DIFFICULTY"
@@ -291,6 +303,16 @@ else
     fail "Chain did not advance (before=$BLOCK_NUM_BEFORE after=$BLOCK_NUM_AFTER)"
 fi
 
+# === Test 11: mined blocks pay the configured coinbase ===
+echo ""
+echo "Test 11: Local mode blocks pay EtcMining.Coinbase"
+MINER=$(block_miner 0x1)
+if [ "$MINER" = "$EXPECTED_COINBASE" ]; then
+    pass "Block 1 miner is the configured coinbase"
+else
+    fail "Block 1 miner is $MINER, expected $EXPECTED_COINBASE"
+fi
+
 stop_node
 
 # ===========================================================================
@@ -298,9 +320,9 @@ stop_node
 # ===========================================================================
 start_node "mess" --EtcMess.Enabled true
 
-# === Test 11: MESS monitor running ===
+# === Test 12: MESS monitor running ===
 echo ""
-echo "Test 11: MESS activation monitor starts with EtcMess.Enabled"
+echo "Test 12: MESS activation monitor starts with EtcMess.Enabled"
 # The monitor step is not ordered against JSON-RPC startup, so poll for it.
 MESS_STARTED=false
 for _ in $(seq 1 30); do
@@ -352,11 +374,17 @@ expect_startup_failure() {
     stop_node
 }
 
-# === Test 12: mining without a block author account is rejected ===
+# === Test 13: zero coinbase is rejected ===
 echo ""
-echo "Test 12: mining without KeyStore.BlockAuthorAccount is rejected"
-expect_startup_failure "no-author" "KeyStore.BlockAuthorAccount is required" \
-    --KeyStore.BlockAuthorAccount ""
+echo "Test 13: EtcMining.Coinbase = 0x0 is rejected"
+expect_startup_failure "zero-coinbase" "EtcMining.Coinbase is required" \
+    --EtcMining.Coinbase 0x0000000000000000000000000000000000000000
+
+# === Test 14: a leftover KeyStore.BlockAuthorAccount is rejected ===
+echo ""
+echo "Test 14: KeyStore.BlockAuthorAccount is rejected"
+expect_startup_failure "block-author" "KeyStore.BlockAuthorAccount is not used" \
+    --KeyStore.BlockAuthorAccount 0x0000000000000000000000000000000000000002
 
 # === Summary ===
 echo ""

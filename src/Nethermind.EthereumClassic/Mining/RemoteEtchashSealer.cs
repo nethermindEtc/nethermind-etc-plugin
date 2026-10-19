@@ -19,21 +19,21 @@ namespace Nethermind.EthereumClassic.Mining;
 internal sealed class RemoteEtchashSealer : ISealer
 {
     private readonly IRemoteSealerClient _remoteSealerClient;
-    private readonly ISigner _signer;
+    private readonly Address _coinbase;
     private readonly IBlockTree _blockTree;
     private readonly ILogger _logger;
     private readonly PendingRemoteSealRegistry<Block> _pending = new();
 
-    public RemoteEtchashSealer(IRemoteSealerClient remoteSealerClient, ISigner signer, IBlockTree blockTree, ILogManager logManager)
+    public RemoteEtchashSealer(IRemoteSealerClient remoteSealerClient, Address coinbase, IBlockTree blockTree, ILogManager logManager)
     {
         _remoteSealerClient = remoteSealerClient;
-        _signer = signer;
+        _coinbase = coinbase;
         _blockTree = blockTree;
         _logger = logManager.GetClassLogger<RemoteEtchashSealer>();
         _remoteSealerClient.SetOnBlockMined(OnBlockMined);
     }
 
-    public Address Address => _signer.Address;
+    public Address Address => _coinbase;
 
     public bool CanSeal(ulong blockNumber, Hash256 parentHash) => true;
 

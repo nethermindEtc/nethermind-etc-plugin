@@ -74,6 +74,7 @@ public class EthereumClassicPlugin(
                 p.GothamTransition,
                 p.Ecip1041Transition,
                 miningConfig.Mode,
+                miningConfig.Coinbase,
                 messConfig.Enabled,
                 validationConfig.ForceSealCheck);
         }
@@ -87,6 +88,7 @@ public class EthereumClassicModule(
     ulong? gothamTransition,
     ulong? ecip1041Transition,
     EtcMiningMode miningMode,
+    Address? coinbase,
     bool messEnabled,
     bool forceSealCheck) : Module
 {
@@ -180,7 +182,7 @@ public class EthereumClassicModule(
             // Override EthashSealer with RemoteEtchashSealer
             builder.Register(ctx => new RemoteEtchashSealer(
                     ctx.Resolve<IRemoteSealerClient>(),
-                    ctx.Resolve<ISigner>(),
+                    coinbase!,
                     ctx.Resolve<IBlockTree>(),
                     ctx.Resolve<ILogManager>()))
                 .As<ISealer>()
@@ -191,7 +193,7 @@ public class EthereumClassicModule(
             // Override EthashSealer with LocalEtchashSealer for CPU mining
             builder.Register(ctx => new LocalEtchashSealer(
                     ctx.Resolve<IEthash>(),
-                    ctx.Resolve<ISigner>(),
+                    coinbase!,
                     ctx.Resolve<ILogManager>()))
                 .As<ISealer>()
                 .SingleInstance();
