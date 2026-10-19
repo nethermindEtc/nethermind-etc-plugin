@@ -37,24 +37,9 @@ internal sealed class LocalEtchashSealer : ISealer
     {
         ValidateBlock(block);
 
-        Block? sealedBlock = await Task.Factory.StartNew(() => Mine(block), cancellationToken)
-            .ContinueWith(t =>
-            {
-                if (t.IsFaulted)
-                {
-                    _logger.Error($"{nameof(SealBlock)} failed", t.Exception);
-                    return null;
-                }
-
-                if (t.IsCompletedSuccessfully)
-                {
-                    t.Result.Header.Hash = t.Result.Header.CalculateHash();
-                }
-
-                return t.Result;
-            }, cancellationToken, TaskContinuationOptions.NotOnFaulted, TaskScheduler.Default);
-
-        return sealedBlock ?? throw new SealEngineException($"{nameof(SealBlock)} failed");
+        Block sealedBlock = await Task.Factory.StartNew(() => Mine(block), cancellationToken);
+        sealedBlock.Header.Hash = sealedBlock.Header.CalculateHash();
+        return sealedBlock;
     }
 
     private Block Mine(Block block)
