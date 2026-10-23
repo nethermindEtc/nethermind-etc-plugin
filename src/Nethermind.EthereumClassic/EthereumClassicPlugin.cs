@@ -108,9 +108,11 @@ public class EthereumClassicModule(
             builder.AddStep(typeof(StartMessActivationMonitor));
         }
 
-        // Override IEthash with Etchash implementation
+        // Override IEthash with Etchash implementation; the local sealer resolves it directly
+        // for the Mine overload that takes a cancellation token
         builder.Register(ctx => new Etchash(ctx.Resolve<ILogManager>(), ecip1099Transition))
             .As<IEthash>()
+            .AsSelf()
             .SingleInstance();
 
         // Override IDifficultyCalculator with ETC-specific implementation
@@ -192,7 +194,7 @@ public class EthereumClassicModule(
         {
             // Override EthashSealer with LocalEtchashSealer for CPU mining
             builder.Register(ctx => new LocalEtchashSealer(
-                    ctx.Resolve<IEthash>(),
+                    ctx.Resolve<Etchash>(),
                     coinbase!,
                     ctx.Resolve<ILogManager>()))
                 .As<ISealer>()
